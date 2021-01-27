@@ -1,0 +1,149 @@
+import { Injectable } from "@angular/core";
+import { HttpClient } from "@angular/common/http";
+import { BehaviorSubject } from "rxjs";
+import { take, tap, delay, switchMap, map } from "rxjs/operators";
+
+import { Booking } from "./booking.model";
+import { AuthService } from "../auth/auth.service";
+
+interface BookingData {
+  bookedFrom: string;
+  bookedTo: string;
+  firstName: string;
+  guestNumber: number;
+  lastName: string;
+  placeId: string;
+  placeImage: string;
+  placeTitle: string;
+  userId: string;
+}
+
+@Injectable({ providedIn: "root" })
+export class BookingService {
+  private _bookings = new BehaviorSubject<Booking[]>([]);
+
+  get bookings() {
+    return this._bookings.asObservable();
+  }
+
+  constructor(private authService: AuthService, private http: HttpClient) {}
+
+  addBooking(
+    placeId: string,
+    placeTitle: string,
+    placeImage: string,
+    firstName: string,
+    lastName: string,
+    guestNumber: number,
+    dateFrom: Date,
+    dateTo: Date
+  ) {
+    let generatedId: string;
+    let newBooking: Booking;
+    let fetchedUserId: string;
+    return this.authService.userId.pipe(
+      take(1),
+      switchMap((userId) => {
+        if (!userId) {
+          throw new Error("No user id found!");
+        }
+        fetchedUserId = userId;
+        return this.authService.token;
+      }),
+      take(1),
+      switchMap((token) => {
+        newBooking = new Booking(
+          Math.random().toString(),
+          placeId,
+          fetchedUserId,
+          placeTitle,
+          placeImage,
+          firstName,
+          lastName,
+          guestNumber,
+          dateFrom,
+          dateTo
+        );
+        return this.http.post<{ name: string }>(
+          `PROJECT_URL_HERE/bookings.json?auth=${token}`,
+          { ...newBooking, id: null }
+        );
+      }),
+      switchMap((resData) => {
+        generatedId = resData.name;
+        return this.bookings;
+      }),
+      take(1), // To stop the loading spinner
+      tap((bookings) => {
+        newBooking.id = generatedId;
+        this._bookings.next(bookings.concat(newBooking));
+      })
+    );
+  }
+
+  cancelBooking(bookingId: string) {
+    return this.authService.token.pipe(
+      take(1),
+      switchMap((token) => {
+        return this.http.delete(
+          `PROJECT_URL_HERE/bookings/${bookingId}.json?auth=${token}`
+        );
+      }),
+      switchMap(() => {
+        return this.bookings;
+      }),
+      take(1), // Take 1 to avoid an infinite loop
+      tap((bookings) => {
+        // Get a new list of bookings and filter out the one to be deleted
+        this._bookings.next(bookings.filter((b) => b.id !== bookingId));
+      })
+    );
+  }
+
+  // Only fetch bookings for the user who made those bookings
+  // Not ALL bookings
+  fetchBookings() {
+    let fetchedUserId: string;
+    return this.authService.userId.pipe(
+      take(1),
+      switchMap((userId) => {
+        if (!userId) {
+          throw new Error("User not found!");
+        }
+        fetchedUserId = userId;
+        return this.authService.token;
+      }),
+      take(1),
+      switchMap((token) => {
+        return this.http.get<{ [key: string]: BookingData }>(
+          `PROJECT_URL_HERE/bookings.json?orderBy="userId"&equalTo="${fetchedUserId}"&auth=${token}`
+        );
+      }),
+      map((bookingData) => {
+        const bookings = [];
+        for (const key in bookingData) {
+          if (bookingData.hasOwnProperty(key)) {
+            bookings.push(
+              new Booking(
+                key,
+                bookingData[key].placeId,
+                bookingData[key].userId,
+                bookingData[key].placeTitle,
+                bookingData[key].placeImage,
+                bookingData[key].firstName,
+                bookingData[key].lastName,
+                bookingData[key].guestNumber,
+                new Date(bookingData[key].bookedFrom),
+                new Date(bookingData[key].bookedTo)
+              )
+            );
+          }
+        }
+        return bookings;
+      }),
+      tap((bookings) => {
+        this._bookings.next(bookings);
+      })
+    );
+  }
+}

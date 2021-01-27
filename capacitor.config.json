@@ -1,9 +1,10 @@
 {
-  "appId": "io.ionic.starter",
+  "appId": "com.eddxdd.ionicangular",
   "appName": "ionic-angular-project",
   "bundledWebRuntime": false,
   "npmClient": "npm",
   "webDir": "www",
+  "linuxAndroidStudioPath": "/snap/android-studio/current/android-studio/bin/studio.sh",
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 0
